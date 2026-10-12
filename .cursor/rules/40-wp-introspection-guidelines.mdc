@@ -1,0 +1,34 @@
+---
+description: WordPress-specific heuristics for identifying blocks/patterns/templates and variant mechanisms generically.
+globs: "**/*.php,**/*.html,**/*.json,**/*.js,**/*.ts,**/*.css,**/*.scss"
+alwaysApply: false
+---
+
+# WP Introspection (Generic Component Rules)
+
+## Component surfaces to scan
+- Runtime: registered blocks, styles, variations (if helper plugin installed)
+- Files: block.json, patterns, templates, template parts, partials/components, CSS/JS
+- Content DB: post_content block markup, known builder meta (best-effort)
+
+## Intent-based theme routing
+- If the user asks about active theme tokens, helpers, or design system details, use `get_theme_profile`.
+
+## Variant mechanisms (generic)
+- block styles (is-style-*)
+- block variations
+- pattern variants (multiple similar patterns)
+- template part variants (header-compact, footer-legal)
+- CSS modifiers (component--compact, is-variant-x)
+- theme mods/options controlling rendering
+
+## Design bridge (Figma / screenshot → repo conventions)
+- Before creating new presentation code from a mock, run the design bridge workflow and reconcile tokens against `get_theme_profile` / bridge output.
+- Never paste raw Figma hex, px spacing, or font stacks into theme files when preset CSS variables exist.
+
+## Always output "why"
+When suggesting reuse/extend/create, include:
+- what exists
+- where it lives
+- how enabled
+- why the recommended mechanism matches project conventions

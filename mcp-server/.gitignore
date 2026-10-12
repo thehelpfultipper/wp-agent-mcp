@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Runtime data
+.env
+.env.*
+!.env.example
+
+# Logs and reports
+*.log
+coverage/
+

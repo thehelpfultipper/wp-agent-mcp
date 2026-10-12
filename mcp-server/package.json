@@ -1,0 +1,67 @@
+{
+  "name": "wp-agent-mcp",
+  "version": "1.0.0",
+  "description": "WordPress-focused MCP server for component discovery and similarity search.",
+  "license": "MIT",
+  "private": false,
+  "author": "Klea Merkuri",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thehelpfultipper/wp-agent-mcp.git",
+    "directory": "mcp-server"
+  },
+  "homepage": "https://github.com/thehelpfultipper/wp-agent-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/thehelpfultipper/wp-agent-mcp/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "mcp",
+    "wordpress",
+    "agent",
+    "component",
+    "similarity",
+    "search"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "commonjs",
+  "main": "dist/server.js",
+  "bin": {
+    "wp-agent-mcp": "./bin/wp-agent-mcp.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "test:local-db-sync": "tsx --test src/services/localDbSyncService.test.ts src/tools/dispatcher.test.ts src/mysqlClientPrerequisites.test.ts src/dbSyncOutsideSandboxRemediation.test.ts src/dbSyncPreflight.test.ts",
+    "test:design-bridge": "tsx --test src/services/designBridgeService.test.ts src/services/themeProfileService.test.ts src/services/designBridge/themeSlugInference.test.ts",
+    "start": "node ./bin/wp-agent-mcp.js",
+    "start:dist": "node dist/server.js",
+    "prepack": "npm run build",
+    "verify:index-schema": "tsx src/scripts/verifyIndexSchema.ts",
+    "verify:native": "node -e \"require('better-sqlite3')\"",
+    "postinstall": "npm run verify:native"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^12.9.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.13.5",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}

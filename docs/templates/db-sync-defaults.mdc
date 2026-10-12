@@ -1,0 +1,39 @@
+---
+description: Default DB sync replacements and safety rules for local WordPress imports
+alwaysApply: false
+---
+
+# DB Sync Defaults
+
+Use these defaults when performing local database sync operations.
+
+## Primary Domain Replacement
+
+- Source: `https://www.YOUR_LIVE_DOMAIN.com`
+- Target: `http://localhost:8888`
+- Always include protocol downgrade (`https` -> `http`) in replacement when your local stack uses HTTP.
+
+## API Host Replacement
+
+- Source: `api.YOUR_LIVE_DOMAIN.com`
+- Target: `api-dev.YOUR_LIVE_DOMAIN.com`
+
+## Token Replacement
+
+- Source: `YOUR_LIVE_TOKEN`
+- Target: `YOUR_LOCAL_TOKEN`
+
+## Required Safety Rules
+
+1. Always back up the local DB before any import or replacement step.
+2. Always run search-replace with safe flags that skip GUID updates.
+3. Use network mode for multisite DB sync operations.
+4. Do not sync files as part of DB sync tasks; DB only.
+
+## Prompting Behavior
+
+When asked to run or generate DB sync commands:
+
+- Apply all replacements above unless the user explicitly overrides values.
+- Include safe search-replace behavior (`--skip-columns=guid` or equivalent).
+- Keep DB sync and file sync as separate workflows.

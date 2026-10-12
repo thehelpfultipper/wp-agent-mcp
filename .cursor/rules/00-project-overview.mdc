@@ -1,0 +1,56 @@
+---
+description: High-level project intent and how the agent should reason about WP Agent MCP.
+globs:
+alwaysApply: true
+---
+
+# WP Agent MCP — Agent Operating Model
+
+## Primary goal
+Help build a Cursor plugin + local MCP server that can reason about any WordPress component/block/pattern/template:
+- existence + variants + usage
+- similarity search
+- theme design system compliance
+- safe patch workflow
+
+## How to work
+- Prefer implementing the smallest vertical slice end-to-end:
+  1) connect → index → audit → output JSON → (optional) patch apply
+- Always produce deterministic outputs and a stable JSON contract for endpoints.
+- Avoid "navbar-specific" logic. Everything must be component-agnostic.
+
+## Intent-based tool routing (agent-side; users stay in natural language)
+- If the user asks “do we already have …” or “does this already exist …”, route to the audit/existence capability (`audit_component`).
+- If the user asks “find pages using …” or “where is this used …”, route to similarity and/or exact usage lookup (`find_similar_content`, `where_is_used`) depending on whether the ask is intent-based or fragment-based.
+- If the user asks for **filtered lists or facts that only live in MySQL** (published slugs, `post_status`, joins across posts/meta, plugin tables) and the SQLite index cannot answer reliably, route to the read-only SQL capability (`query_wp_db_readonly`). The user must never be required to name this tool or hand-author transport payloads.
+- If the user asks "update local db", "sync my local db from this dump", "import this SQL dump into local WordPress", "refresh local db and replace URLs", or "import this dump and update API URL/token mappings", use `sync_local_db_from_dump` via one of the two paths below.
+- `sync_local_db_from_dump` is DB-only; if the request also asks for uploads/files/media sync, complete DB sync intent only and guide file sync to a separate future capability.
+- When `sync_local_db_from_dump` returns **`DB_SYNC_REQUIRES_ELEVATED_CONTEXT`**, immediately show the user **`outsideSandboxRemediation.assistantMessage`** (or the same block from `errorDetails`) verbatim, then the **`verifyConnectivityCommands`** as copy-paste steps—do not stop at "blocked"; walk them through Terminal + MCP settings and retry.
+- If the user asks to **implement, build, or match a design** and provides a **Figma link, screenshot, or mock**, route to the design bridge workflow (readiness check → capture/interpret → bridge reconciliation → implement → optional verification). Load the `wp-agent-toolkit-design-bridge` skill. Do not apply raw Figma values directly to theme files. **Do not** skip bridge steps by running repo search (`search_project_files`, terminal `grep`/`rg`) before `bridge_design_to_implementation` unless the bridge spec explicitly directs file reads.
+- Keep routing generic: infer intent from user language, not component names.
+
+## DB Sync — two input paths
+
+### Path 1: tagged rules file (preferred)
+The user tags a project-specific rules file in their prompt (e.g. `@project-db-sync.mdc` or `docs/templates/db-sync-defaults.mdc`). Parse it using the conventions below and call `sync_local_db_from_dump` immediately — no follow-up questions.
+
+**How to parse a tagged DB sync rules file:**
+- **Primary Domain Replacement** section → `liveDomain` = the `Source` value; `localUrl` = the `Target` value.
+- Any other named replacement section (e.g. "API Host Replacement", "Token Replacement") → one `replacementMappings[]` entry per section: `from` = Source, `to` = Target, `label` = section heading in kebab-case.
+- **Required Safety Rules** / **Prompting Behavior** sections → informational only; do not pass as tool inputs — the tool already enforces backup-before-import, `--skip-columns=guid`, and multisite network flag.
+- If `dumpPath` is not in the file, extract it from the user's message or ask for it before calling the tool.
+
+### Path 2: no rules file tagged (interactive)
+If the user triggers a DB sync without tagging a rules file, gather the required values before calling the tool. Use structured prompts (`AskQuestion`) for options-based fields and a direct message question for free-text fields:
+
+1. **Dump file path** — if not mentioned in the user's message, ask for it.
+2. **Live production domain** (`liveDomain`) — ask: "What is the production domain? (e.g. `www.example.com`)"
+3. **Local WordPress URL** (`localUrl`) — offer common options: `http://localhost:8888`, `http://localhost:3000`, `http://localhost:10000`, `http://site.local`, or custom.
+4. **Additional replacements** — ask: "Are there any API host or token replacements to apply after the domain swap? (yes / no)" — if yes, ask for each `from` / `to` / label pair.
+
+Once all values are collected, call `sync_local_db_from_dump` in a single invocation.
+
+## Deliverables priority
+1) MCP server + indexer + audit endpoint
+2) Cursor skill pack that drives those endpoints
+3) Optional WP helper plugin

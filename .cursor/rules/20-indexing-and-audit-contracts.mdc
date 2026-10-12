@@ -1,0 +1,36 @@
+---
+description: Defines the indexing artifacts and the JSON response contract for audit and similarity endpoints.
+globs:
+alwaysApply: true
+---
+
+# Index & API Contracts (POC)
+
+## Index location
+- `.cursor-wp-index/`
+  - `index.sqlite`
+  - `blocks.json`, `patterns.json`, `templates.json` (debug exports)
+
+## Minimum SQLite tables
+- blocks(id, name, sourceType, path, attrsJson, stylesJson, variationsJson)
+- patterns(id, slug, title, path, blockFingerprint, markerSignature)
+- templates(id, type, path, blockFingerprint, includesJson)
+- content(postId, postType, title, blockFingerprint, markerSignature, contentSearchText)
+
+## Fingerprints
+- blockFingerprint: hash of normalized block-name sequence (+ shallow depth hints)
+- markerSignature: hash of sorted classes/data-attrs/selectors
+
+## /audit/component response MUST include
+- verdict: exists | partial | missing
+- bestMatch (if any): type + id/path + enableSteps
+- variants: existing + missing + recommended mechanism
+- usage: content/templates/patterns matches
+- candidates: ranked list with score + reasons[]
+- recommendation: reuse/extend/create + lowestRiskApproach
+- patchPlan: files + checks + rollback
+
+## /search/similar response MUST include
+- queryEcho
+- matches grouped by kind: content, patterns, templates, files
+- confidence per match + reason markers

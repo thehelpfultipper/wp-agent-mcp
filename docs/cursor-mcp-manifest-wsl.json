@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "wp-agent": {
+      "command": "node",
+      "args": ["/home/YOU/wp-agent-mcp/mcp-server/bin/wp-agent-mcp.js"],
+      "env": {
+        "WP_ROOT": "/var/www/html",
+        "WP_CLI": "wp"
+      }
+    }
+  }
+}

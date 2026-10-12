@@ -1,0 +1,27 @@
+---
+description: Safety and architecture constraints for local WP introspection and patching.
+globs:
+alwaysApply: true
+---
+
+# Architecture & Safety Constraints
+
+## Safety
+- Patch-only file writes (unified diff). Never overwrite entire files unless explicitly requested.
+- Always show a preview diff before applying.
+- Run `php -l` on any changed PHP file (or equivalent lint step).
+- Never modify `wp-config.php` or server config files unless the user explicitly requests it.
+- Never run arbitrary shell commands; use only whitelisted `wp`/tooling commands.
+- If the user wants to apply a prepared diff/patch, use `apply_patch`.
+
+## Local-first design
+- Prefer `wp db query` over direct DB connections.
+- All filesystem access must be restricted to the configured WP root.
+- Store index in `.cursor-wp-index/` with a stable schema version.
+
+## Reuse > Extend > Create
+Before creating a new block/component:
+1) check patterns
+2) check block styles/variations
+3) check template parts
+4) only then scaffold a new block

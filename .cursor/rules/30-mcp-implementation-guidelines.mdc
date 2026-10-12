@@ -1,0 +1,35 @@
+---
+description: Implementation rules for the Node MCP server (tool interface, validation, whitelisting).
+globs: mcp-server/**,**/*mcp*,**/*server*
+alwaysApply: false
+---
+
+# MCP Server Implementation Guidelines
+
+## Public tool interface (POC)
+- `connect_wordpress`
+- `build_wp_index`
+- `get_index_status`
+- `audit_component`
+- `find_similar_content`
+- `where_is_used`
+- `query_wp_db_readonly` (single `SELECT` via `wp db query`, allowlisted read-only)
+- `get_theme_profile`
+- `get_design_bridge_readiness`
+- `bridge_design_to_implementation`
+
+## Internal helpers (transport hidden from user prompts)
+- `run_wp_cli`
+- `search_wp_files`
+- `read_wp_file`
+- `apply_patch`
+
+## Validation & security
+- Reject any request that attempts to access paths outside WP root.
+- `run_wp_cli`: implement an allowlist of commands/subcommands.
+- `query_wp_db_readonly`: reject anything except a single validated read-only `SELECT` (no DDL/DML, no cross-schema reads); cap row output via `LIMIT`.
+- `apply_patch`: require unified diff format and validate file targets exist within WP root.
+
+## Logging
+- Log inputs/outputs with redaction for secrets.
+- Return structured errors with stable codes (e.g., WPCLI_NOT_FOUND, WP_ROOT_INVALID).
