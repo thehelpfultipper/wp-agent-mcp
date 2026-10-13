@@ -21,13 +21,13 @@ npm run build
 npm run verify:native
 ```
 
-Then point Cursor to the local entrypoint:
+Then point Cursor to the local entrypoint (pin the same Node you used for `npm install`):
 
 ```json
 {
   "mcpServers": {
     "wp-agent": {
-      "command": "node",
+      "command": "/absolute/path/to/node",
       "args": ["/absolute/path/to/wp-agent-mcp/mcp-server/bin/wp-agent-mcp.js"],
       "env": {
         "WP_ROOT": "/absolute/path/to/wordpress"
@@ -36,6 +36,8 @@ Then point Cursor to the local entrypoint:
   }
 }
 ```
+
+Set `command` to `command -v node` — not bare `"node"` — so `better-sqlite3` matches the Node that runs MCP. See `../docs/mcp-cursor-config.md` and `../docs/teammate-quickstart.md`.
 
 The `wp-agent-mcp` bin entrypoint starts the bundled server build from `dist/server.js`.
 
@@ -78,8 +80,8 @@ If you install from a registry, git URL, or tarball instead of a local clone:
 {
   "mcpServers": {
     "wp-agent": {
-      "command": "npx",
-      "args": ["-y", "<package-spec>"],
+      "command": "/absolute/path/to/node",
+      "args": ["/absolute/path/to/npx", "-y", "<package-spec>"],
       "env": {
         "WP_ROOT": "/absolute/path/to/wordpress"
       }

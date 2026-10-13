@@ -10,13 +10,13 @@ See **[`docs/mcp-cursor-config.md`](docs/mcp-cursor-config.md)** for the full gu
 
 Copy-paste manifest: [`docs/cursor-mcp-manifest.json`](docs/cursor-mcp-manifest.json)
 
-Recommended manifest:
+Recommended manifest (pin Node — required for `better-sqlite3`):
 
 ```json
 {
   "mcpServers": {
     "wp-agent": {
-      "command": "node",
+      "command": "/absolute/path/to/node",
       "args": ["/absolute/path/to/wp-agent-mcp/mcp-server/bin/wp-agent-mcp.js"],
       "env": {
         "WP_ROOT": "/path/to/wordpress"
@@ -26,16 +26,23 @@ Recommended manifest:
 }
 ```
 
-Only edit:
-- `WP_ROOT`: absolute path to your local WordPress root.
+Edit three paths:
 
-Optional advanced manifest (only if your shell cannot find binaries):
+- **`command`**: output of `command -v node` from the Node you use for `npm install` in `mcp-server/` (do not use bare `"node"` — Cursor may pick a different binary).
+- **`args[0]`**: absolute path to `mcp-server/bin/wp-agent-mcp.js` in your clone.
+- **`WP_ROOT`**: absolute path to your WordPress root.
+
+Run `npm install` and `npm run build` in `mcp-server/` with that same Node before starting MCP.
+
+ABI troubleshooting: [`docs/teammate-quickstart.md`](docs/teammate-quickstart.md#node_module_version--better-sqlite3-abi-mismatch).
+
+Optional advanced manifest (explicit `wp` / `php` paths):
 
 ```json
 {
   "mcpServers": {
     "wp-agent": {
-      "command": "node",
+      "command": "/absolute/path/to/node",
       "args": ["/absolute/path/to/wp-agent-mcp/mcp-server/bin/wp-agent-mcp.js"],
       "env": {
         "WP_ROOT": "/path/to/wordpress",
@@ -51,7 +58,7 @@ After saving config, restart Cursor and ask: `What MCP tools do you have from wp
 
 ## Other install options
 
-- **Local clone (recommended):** `node` + absolute path to `mcp-server/bin/wp-agent-mcp.js` (shown above). Run `npm run build` in `mcp-server` once.
+- **Local clone (recommended):** pinned absolute Node in `command` + path to `mcp-server/bin/wp-agent-mcp.js` (shown above). Run `npm install` and `npm run build` in `mcp-server` with that same Node.
 - **npm / git / tarball:** use `npx` with a package spec (public `wp-agent-mcp@latest` when published, or your own registry/git URL). Details in [`docs/mcp-cursor-config.md`](docs/mcp-cursor-config.md).
 
 If you see `npm error 404 ... wp-agent-mcp`, the spec is not on the registry Cursor is using—use the local source manifest or configure the correct registry.

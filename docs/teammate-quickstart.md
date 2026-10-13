@@ -58,13 +58,13 @@ npm install
 npm run build
 ```
 
-2. Add this MCP manifest (replace `WP_ROOT` and server path):
+2. Add this MCP manifest (replace pinned Node, server path, and `WP_ROOT`):
 
 ```json
 {
   "mcpServers": {
     "wp-agent": {
-      "command": "node",
+      "command": "/absolute/path/to/node",
       "args": ["/absolute/path/to/wp-agent-mcp/mcp-server/bin/wp-agent-mcp.js"],
       "env": {
         "WP_ROOT": "/absolute/path/to/wordpress"
@@ -74,6 +74,8 @@ npm run build
 }
 ```
 
+Use the path from `command -v node` for `command` (see prerequisites above).
+
 ### Option B: npm, git, or tarball
 
 If you install from a registry, git URL, or tarball instead of a clone, use `npx` with your package spec:
@@ -82,8 +84,8 @@ If you install from a registry, git URL, or tarball instead of a clone, use `npx
 {
   "mcpServers": {
     "wp-agent": {
-      "command": "npx",
-      "args": ["-y", "<package-spec>"],
+      "command": "/absolute/path/to/node",
+      "args": ["/absolute/path/to/npx", "-y", "<package-spec>"],
       "env": {
         "WP_ROOT": "/absolute/path/to/wordpress"
       }
@@ -300,7 +302,7 @@ This means another process is already using the same port.
 
 This means the `npx` package spec is not available on the registry Cursor/npm is using (for example the package is not published yet, or you need a private registry).
 
-- Preferred fix: switch to Option A (`command: "node"` + absolute path to `bin/wp-agent-mcp.js`).
+- Preferred fix: switch to Option A (pinned absolute Node in `command` + path to `bin/wp-agent-mcp.js`).
 - If you use `npx`, set `<package-spec>` to a resolvable name (public npm, scoped package, git URL, or tarball). See [`mcp-cursor-config.md`](./mcp-cursor-config.md).
 - For private registries, verify auth in terminal first:
   - `npm config get registry`
@@ -329,7 +331,7 @@ Add explicit binary paths in your manifest:
 {
   "mcpServers": {
     "wp-agent": {
-      "command": "node",
+      "command": "/absolute/path/to/node",
       "args": ["/absolute/path/to/wp-agent-mcp/mcp-server/bin/wp-agent-mcp.js"],
       "env": {
         "WP_ROOT": "/absolute/path/to/wordpress",
