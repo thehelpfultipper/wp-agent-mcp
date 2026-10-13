@@ -36,7 +36,7 @@ Run `npm install` and `npm run build` in `mcp-server/` with that same Node befor
 
 ABI troubleshooting: [`docs/teammate-quickstart.md`](docs/teammate-quickstart.md#node_module_version--better-sqlite3-abi-mismatch).
 
-Optional advanced manifest (explicit `wp` / `php` paths):
+Optional advanced manifest (explicit `wp` / `php` paths). Add these when `wp --info` works in Terminal but Cursor reports `Connection closed` or the server stays on `initializing`. Cursor launched from the Dock or Finder uses a short process `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`), so Homebrew and nvm binaries are invisible at startup. Homebrew `wp` is a `#!/usr/bin/env php` script, so `WP_CLI` alone still fails until the directory that contains `php` is on `PATH`. `WP_AGENT_EXTRA_PATH` only helps MySQL client tools during DB sync; it does not satisfy this startup check.
 
 ```json
 {
@@ -47,12 +47,15 @@ Optional advanced manifest (explicit `wp` / `php` paths):
       "env": {
         "WP_ROOT": "/path/to/wordpress",
         "WP_CLI": "/absolute/path/to/wp",
-        "PHP_BIN": "/absolute/path/to/php"
+        "PHP_BIN": "/absolute/path/to/php",
+        "PATH": "/absolute/path/to/bin:/usr/bin:/bin:/usr/sbin:/sbin"
       }
     }
   }
 }
 ```
+
+Resolve the paths in Terminal with `command -v wp` and `command -v php`. The `PATH` prefix is that `bin` directory (Apple Silicon Homebrew is often `/opt/homebrew/bin`; a custom prefix such as `~/homebrew/bin` uses that directory instead).
 
 After saving config, restart Cursor and ask: `What MCP tools do you have from wp-agent?`
 
@@ -164,7 +167,7 @@ If a prompt combines DB sync with uploads/media/file sync, split the request: ru
 
 ## Notes
 
-- User-facing config is env-based (`WP_ROOT`, optional `WP_CLI`, optional `PHP_BIN`, optional `WP_AGENT_EXTRA_PATH` for MySQL client `bin` dirs, optional `WP_AGENT_MS_ALIGN_DOMAIN_COLUMNS=0` to skip multisite `{prefix}site`/`{prefix}blogs` domain bulk alignment).
+- User-facing config is env-based (`WP_ROOT`, optional `WP_CLI`, optional `PHP_BIN`, optional `PATH` when Cursor’s GUI `PATH` cannot see `php`, optional `WP_AGENT_EXTRA_PATH` for MySQL client `bin` dirs, optional `WP_AGENT_MS_ALIGN_DOMAIN_COLUMNS=0` to skip multisite `{prefix}site`/`{prefix}blogs` domain bulk alignment).
 - MCP startup is lightweight (config + `WP_ROOT` validation + tool registration) and avoids full index builds during boot.
 - Build the index explicitly with `build_wp_index`; audit/search tools return a clear `INDEX_NOT_READY` instruction if no index build exists yet.
 - Usage lookups rely on the local index. If results look stale or missing, run `build_wp_index` and retry.

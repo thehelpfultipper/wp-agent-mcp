@@ -30,7 +30,7 @@ php -v
 command -v node   # copy this path into mcp.json "command"
 ```
 
-If `wp` or `php` is not on your path, you can still test by setting `WP_CLI` and/or `PHP_BIN` explicitly in the manifest (shown in troubleshooting).
+If `wp --info` works in Terminal but MCP reports `Connection closed` or stays on `initializing`, Cursor’s process `PATH` does not include those binaries. Set optional `WP_CLI`, `PHP_BIN`, and `PATH` in the manifest (shown in troubleshooting). `WP_CLI` alone is not enough: the `wp` launcher needs `php` on `PATH`.
 
 ### Bedrock projects
 
@@ -197,6 +197,9 @@ The assistant will ask a short series of questions (production domain, local URL
 
 **MCP manifest env (only if needed):**
 
+- `WP_CLI` — absolute path to `wp` when the MCP process cannot see it on `PATH`
+- `PHP_BIN` — absolute path to `php` when the MCP process cannot see it on `PATH`
+- `PATH` — include the `bin` directory that contains `php` (required with Homebrew `wp`, which is `#!/usr/bin/env php`). This is separate from `WP_AGENT_EXTRA_PATH`.
 - `WP_AGENT_EXTRA_PATH` — MySQL client `bin` dir when `mysql`/`mysqldump` work in Terminal but not in MCP
 - `WP_AGENT_MS_ALIGN_DOMAIN_COLUMNS=0` — skip multisite core domain bulk alignment (subdomain-style networks)
 
@@ -323,9 +326,20 @@ This means the `npx` package spec is not available on the registry Cursor/npm is
 - Check build output for `filesystemRoots.contentRelativePrefix` — should be `"app"` on Bedrock.
 - If `discovered.blocks` is still `0` but themes exist, check for `warnings` in the build summary (for example themes dir exists but no `block.json` files were found).
 
-### `wp` or `php` command not found
+### `Connection closed`, server stuck on `initializing`, or `wp` / `php` not found
 
-Add explicit binary paths in your manifest:
+Startup runs `wp --info` and `php -v` before the MCP handshake. If either binary is missing from the **MCP process** `PATH`, the process exits and Cursor logs `MCP error -32000: Connection closed` (often after a line that only says `statusType=initializing, success=true`). That failure is not retried until you change config and reload the server.
+
+This happens when `wp` and `php` work in Terminal but Cursor was opened from the Dock or Finder. That process `PATH` is `/usr/bin:/bin:/usr/sbin:/sbin`, so Homebrew and nvm bins are omitted. Homebrew `wp` is `#!/usr/bin/env php`, so an absolute `WP_CLI` still fails with `env: php: No such file or directory` until `php`’s directory is on `PATH`. `WP_AGENT_EXTRA_PATH` does not fix this; it only prepends MySQL client dirs during DB sync.
+
+In Terminal:
+
+```bash
+command -v wp
+command -v php
+```
+
+Add those paths, and put the `php` `bin` directory on `PATH`:
 
 ```json
 {
@@ -336,14 +350,15 @@ Add explicit binary paths in your manifest:
       "env": {
         "WP_ROOT": "/absolute/path/to/wordpress",
         "WP_CLI": "/absolute/path/to/wp",
-        "PHP_BIN": "/absolute/path/to/php"
+        "PHP_BIN": "/absolute/path/to/php",
+        "PATH": "/absolute/path/to/bin:/usr/bin:/bin:/usr/sbin:/sbin"
       }
     }
   }
 }
 ```
 
-Then save and restart Cursor.
+Apple Silicon Homebrew is often `/opt/homebrew/bin`. A custom Homebrew prefix uses that `bin` directory instead (for example `/Users/you/homebrew/bin`). Save, then reload `wp-agent` in **Settings → MCP** (or quit and reopen Cursor).
 
 ### Index-related prompts return `INDEX_NOT_READY`
 

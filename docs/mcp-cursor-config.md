@@ -67,9 +67,10 @@ Add to the same `env` block when needed:
 
 | Variable | Purpose |
 |----------|---------|
-| `WP_CLI` | Path to `wp` if not on PATH for the MCP process |
-| `PHP_BIN` | Path to `php` if not on PATH |
-| `WP_AGENT_EXTRA_PATH` | Directory containing `mysql`, `mysqldump`, `mysqlcheck` (DB sync) |
+| `WP_CLI` | Absolute path to `wp` when the MCP process `PATH` cannot see it |
+| `PHP_BIN` | Absolute path to `php` when the MCP process `PATH` cannot see it |
+| `PATH` | Must include the directory that contains `php`. Cursor opened from the Dock or Finder uses `/usr/bin:/bin:/usr/sbin:/sbin`, so Homebrew `wp` (`#!/usr/bin/env php`) exits at startup unless this is set. Startup failure shows up as `Connection closed`. |
+| `WP_AGENT_EXTRA_PATH` | Directory containing `mysql`, `mysqldump`, `mysqlcheck` (DB sync only; does not fix the startup `wp`/`php` check) |
 | `WP_AGENT_ALLOWED_DUMP_ROOTS` | Extra allowed roots for SQL dump paths (path-separated) |
 | `WP_AGENT_MS_ALIGN_DOMAIN_COLUMNS=0` | Skip multisite domain column bulk alignment |
 
@@ -84,7 +85,8 @@ Example with explicit binaries:
       "env": {
         "WP_ROOT": "/absolute/path/to/wordpress",
         "WP_CLI": "/absolute/path/to/wp",
-        "PHP_BIN": "/absolute/path/to/php"
+        "PHP_BIN": "/absolute/path/to/php",
+        "PATH": "/absolute/path/to/bin:/usr/bin:/bin:/usr/sbin:/sbin"
       }
     }
   }
