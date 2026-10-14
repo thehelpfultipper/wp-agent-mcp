@@ -11,13 +11,35 @@ import {
   isMissingMysqlClientMessage,
   isWordpressDatabaseErrorDocument,
   parseMysqlSocketFromCnf,
-  resolveAlternateMysqlSocket
+  resolveAlternateMysqlSocket,
+  shouldAttachResolvedSocket
 } from "./mysqlUnixSocket";
 import { createConfigService } from "./services/configService";
 import { createWpDbReadService, decodeReadonlyEvalCell } from "./services/wpDbReadService";
 import { clearDiscoveredMysqlSocketCache, runWpCli } from "./wpCli";
 
 const SOCKET_STDERR = "Failed to get current SQL modes. Reason: ERROR 2002 (HY000): Can't connect to local MySQL server through socket '/tmp/mysql.sock' (2)";
+
+test("a machine-wide socket is not used for a generic database error page", () => {
+  const siteSpecific = {
+    socketPath: "/tmp/site.sock",
+    source: "site-config" as const,
+    configuredButMissing: null,
+    ambiguousSockets: []
+  };
+  const machineWide = {
+    socketPath: "/opt/homebrew/var/mysql/mysql.sock",
+    source: "well-known" as const,
+    configuredButMissing: null,
+    ambiguousSockets: []
+  };
+  assert.equal(shouldAttachResolvedSocket(siteSpecific, ""), true);
+  assert.equal(shouldAttachResolvedSocket(machineWide, ""), false);
+  assert.equal(
+    shouldAttachResolvedSocket(machineWide, "ERROR 2002 (HY000): Can't connect to local MySQL server through socket '/tmp/mysql.sock'"),
+    true
+  );
+});
 
 test("socket failures are not treated as a missing mysql client", () => {
   assert.equal(isMissingMysqlClientMessage(SOCKET_STDERR), false);

@@ -167,6 +167,7 @@ If a prompt combines DB sync with uploads/media/file sync, split the request: ru
 
 ## Notes
 
+- Database connectivity has been hand-tested mainly with Local, MAMP, and Homebrew MySQL sites. Other local stacks can work when `wp` on the host can already reach that site's database; they have not had the same pass.
 - User-facing config is env-based (`WP_ROOT`, optional `WP_CLI`, optional `PHP_BIN`, optional `PATH` when Cursor’s GUI `PATH` cannot see `php`, optional `WP_AGENT_EXTRA_PATH` for MySQL client `bin` dirs, optional `WP_AGENT_MS_ALIGN_DOMAIN_COLUMNS=0` to skip multisite `{prefix}site`/`{prefix}blogs` domain bulk alignment).
 - MCP startup is lightweight (config + `WP_ROOT` validation + tool registration) and avoids full index builds during boot.
 - Build the index explicitly with `build_wp_index`; audit/search tools return a clear `INDEX_NOT_READY` instruction if no index build exists yet.

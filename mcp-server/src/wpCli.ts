@@ -12,6 +12,7 @@ import {
   isMysqlSocketConnectFailure,
   isWordpressDatabaseErrorDocument,
   resolveAlternateMysqlSocket,
+  shouldAttachResolvedSocket,
   socketPathFromConnectFailure,
   type MysqlSocketResolution
 } from "./mysqlUnixSocket";
@@ -108,11 +109,21 @@ export function clearDiscoveredMysqlSocketCache(): void {
 }
 
 export function runWpCli(wpRoot: string, args: string[], command?: string, pathPrepend?: string[]): string {
+  return runWpCliAttempt(wpRoot, args, command, pathPrepend, true);
+}
+
+function runWpCliAttempt(
+  wpRoot: string,
+  args: string[],
+  command: string | undefined,
+  pathPrepend: string[] | undefined,
+  useCache: boolean
+): string {
   ensureWpCliCommandAllowed(args);
   const wpCliPath = detectWpCliPath(command);
   const normalizedWpRoot = wpRoot.trim();
   const baseEnv = spawnEnvForWpCli(pathPrepend);
-  const cachedSocket = discoveredMysqlSockets.get(normalizedWpRoot);
+  const cachedSocket = useCache ? discoveredMysqlSockets.get(normalizedWpRoot) : undefined;
   const firstEnv = cachedSocket ? envWithMysqlSocket(baseEnv, cachedSocket) : baseEnv;
   const first = runBinary(wpCliPath, [`--path=${normalizedWpRoot}`, ...args], firstEnv);
 
@@ -120,10 +131,15 @@ export function runWpCli(wpRoot: string, args: string[], command?: string, pathP
     return first.stdout;
   }
 
-  const resolution = cachedSocket || process.platform === "win32" || !shouldRetryMysqlSocket(first, args)
+  if (cachedSocket && isDatabaseConnectionFailure(first, args)) {
+    discoveredMysqlSockets.delete(normalizedWpRoot);
+    return runWpCliAttempt(wpRoot, args, command, pathPrepend, false);
+  }
+
+  const resolution = process.platform === "win32" || !shouldRetryMysqlSocket(first, args)
     ? null
     : resolveAlternateMysqlSocket(normalizedWpRoot, socketPathFromConnectFailure(first.stderr));
-  if (resolution?.socketPath) {
+  if (resolution?.socketPath && shouldAttachResolvedSocket(resolution, first.stderr)) {
     const retried = runBinary(
       wpCliPath,
       [`--path=${normalizedWpRoot}`, ...args],
@@ -210,6 +226,35 @@ function phpIniDirForMysqlSocket(socketPath: string): string {
   return dir;
 }
 
+function readDefinedDbHost(wpRoot: string): string | null {
+  const candidates = [
+    path.join(wpRoot, "wp-config.php"),
+    path.join(path.dirname(wpRoot), "wp-config.php")
+  ];
+  for (const filePath of candidates) {
+    let contents: string;
+    try {
+      contents = fs.readFileSync(filePath, "utf8");
+    } catch {
+      continue;
+    }
+    const match = /define\s*\(\s*['"]DB_HOST['"]\s*,\s*['"]([^'"]*)['"]\s*\)/u.exec(contents);
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
+function dbHostIsRemote(host: string): boolean {
+  const trimmed = host.trim();
+  if (trimmed.includes(":/") || trimmed.includes(":\\")) {
+    return false;
+  }
+  const hostOnly = trimmed.split(":")[0] ?? trimmed;
+  return hostOnly !== "localhost" && hostOnly !== "127.0.0.1" && hostOnly !== "::1";
+}
+
 function isEvalCommand(args: string[]): boolean {
   return args[0] === "eval" || args[0] === "eval-file";
 }
@@ -252,17 +297,23 @@ function databaseConnectionError(
   let message = failedSocket
     ? `MySQL is installed, but WP-CLI could not connect through socket '${failedSocket}'.`
     : "WordPress could not connect to MySQL. wp eval printed a database connection page and exited 0.";
+  const dbHost = readDefinedDbHost(wpRoot);
   if (retriedSocket) {
     message += ` A connection using socket '${retriedSocket}' failed as well.`;
+  } else if (dbHost && dbHostIsRemote(dbHost)) {
+    message += ` wp-config.php DB_HOST is '${dbHost}', which this host process cannot reach. Use WP-CLI from inside that same network.`;
   } else if (resolution?.configuredButMissing) {
     message += ` This site's MySQL config names '${resolution.configuredButMissing}', and that socket is not present. Start the site so MySQL is running, then retry.`;
   } else if (resolution?.unresolvedLocalSite) {
     message += " This WordPress root is a Local site, but its runtime MySQL socket was not found. Start the site in Local, then retry.";
   } else if (resolution && resolution.ambiguousSockets.length > 1) {
-    message += ` More than one local MySQL socket is available (${resolution.ambiguousSockets.join(", ")}), so none was selected.`;
+    message += ` More than one local MySQL socket is available (${resolution.ambiguousSockets.join(", ")}), so none was selected. Choosing one can attach this site to the wrong database.`;
+  } else if (resolution?.socketPath && resolution.source === "well-known") {
+    message += ` Another MySQL socket is running at '${resolution.socketPath}', and it was not used because this failure was not a socket mismatch.`;
   } else if (!retriedSocket) {
-    message += " Local and similar apps keep DB_HOST as localhost while MySQL listens on a site-specific socket. Start the site, or set DB_HOST to localhost:/absolute/path/to/mysqld.sock.";
+    message += " The site database did not accept this connection.";
   }
+  message += " Do not symlink a MySQL socket and do not edit wp-config.php.";
 
   return new AppError("DB_UNREACHABLE", message, 400, {
     command: `${wpCliPath} --path=${wpRoot} ${formatWpCliSubcommand(args)}`,

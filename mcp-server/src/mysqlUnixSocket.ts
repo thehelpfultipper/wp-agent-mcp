@@ -39,6 +39,25 @@ export function isMysqlSocketConnectFailure(stderr: string): boolean {
     || /error\s+2002\b/iu.test(stderr);
 }
 
+/**
+ * A site-specific socket (Local's run directory, or that site's my.cnf) is safe
+ * to attach after a database error page. A machine-wide socket is only safe when
+ * the client reported a socket failure; otherwise a stopped TCP port or a bad
+ * password would be retried against a different MySQL server.
+ */
+export function shouldAttachResolvedSocket(
+  resolution: MysqlSocketResolution,
+  stderr: string
+): boolean {
+  if (!resolution.socketPath) {
+    return false;
+  }
+  if (resolution.source === "site-config") {
+    return true;
+  }
+  return isMysqlSocketConnectFailure(stderr);
+}
+
 export function socketPathFromConnectFailure(stderr: string): string | null {
   const match = /through socket ['"]([^'"]+)['"]/iu.exec(stderr);
   const socketPath = match?.[1]?.trim();
