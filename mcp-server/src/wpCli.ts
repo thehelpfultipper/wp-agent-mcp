@@ -1,9 +1,20 @@
+import crypto from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { createReadStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { AppError } from "./errors";
 import { internalDefaults } from "./config/runtime";
 import { prependToPathEnv } from "./mysqlClientPrerequisites";
+import {
+  isMysqlSocketConnectFailure,
+  isWordpressDatabaseErrorDocument,
+  resolveAlternateMysqlSocket,
+  socketPathFromConnectFailure,
+  type MysqlSocketResolution
+} from "./mysqlUnixSocket";
 
 /** Default spawnSync maxBuffer (1 MiB) is too small for `wp db query` over many large posts (base64 content). */
 const WP_CLI_SPAWN_MAX_BUFFER = 64 * 1024 * 1024;
@@ -90,31 +101,179 @@ export function detectWpCliPath(command?: string): string {
   return whichResult.stdout.split("\n")[0] ?? resolvedCommand;
 }
 
+const discoveredMysqlSockets = new Map<string, string>();
+
+export function clearDiscoveredMysqlSocketCache(): void {
+  discoveredMysqlSockets.clear();
+}
+
 export function runWpCli(wpRoot: string, args: string[], command?: string, pathPrepend?: string[]): string {
   ensureWpCliCommandAllowed(args);
   const wpCliPath = detectWpCliPath(command);
   const normalizedWpRoot = wpRoot.trim();
-  const spawnEnv =
-    pathPrepend && pathPrepend.length > 0
-      ? { ...process.env, PATH: prependToPathEnv(process.env.PATH, pathPrepend) }
-      : process.env;
-  const result = runBinary(wpCliPath, [`--path=${normalizedWpRoot}`, ...args], spawnEnv);
+  const baseEnv = spawnEnvForWpCli(pathPrepend);
+  const cachedSocket = discoveredMysqlSockets.get(normalizedWpRoot);
+  const firstEnv = cachedSocket ? envWithMysqlSocket(baseEnv, cachedSocket) : baseEnv;
+  const first = runBinary(wpCliPath, [`--path=${normalizedWpRoot}`, ...args], firstEnv);
 
-  if (result.status !== 0 && !isWarningOnlyWpCliStderr(result.stderr)) {
-    throw new AppError(
-      "WPCLI_FAILED",
-      "wp-cli command failed.",
-      400,
-      {
-        command: `${wpCliPath} --path=${normalizedWpRoot} ${formatWpCliSubcommand(args)}`,
-        subcommand: formatWpCliSubcommand(args),
-        args,
-        stderr: result.stderr
-      }
+  if (!wpCliResultFailed(first, args)) {
+    return first.stdout;
+  }
+
+  const resolution = cachedSocket || process.platform === "win32" || !shouldRetryMysqlSocket(first, args)
+    ? null
+    : resolveAlternateMysqlSocket(normalizedWpRoot, socketPathFromConnectFailure(first.stderr));
+  if (resolution?.socketPath) {
+    const retried = runBinary(
+      wpCliPath,
+      [`--path=${normalizedWpRoot}`, ...args],
+      envWithMysqlSocket(baseEnv, resolution.socketPath)
+    );
+    if (!wpCliResultFailed(retried, args)) {
+      discoveredMysqlSockets.set(normalizedWpRoot, resolution.socketPath);
+      return retried.stdout;
+    }
+    throw databaseConnectionError(
+      wpCliPath,
+      normalizedWpRoot,
+      args,
+      retried.stderr,
+      retried.stdout,
+      resolution.socketPath
     );
   }
 
-  return result.stdout;
+  if (isDatabaseConnectionFailure(first, args) || resolution) {
+    throw databaseConnectionError(
+      wpCliPath,
+      normalizedWpRoot,
+      args,
+      first.stderr,
+      first.stdout,
+      cachedSocket ?? null,
+      resolution
+    );
+  }
+
+  throw new AppError(
+    "WPCLI_FAILED",
+    "wp-cli command failed.",
+    400,
+    {
+      command: `${wpCliPath} --path=${normalizedWpRoot} ${formatWpCliSubcommand(args)}`,
+      subcommand: formatWpCliSubcommand(args),
+      args,
+      stderr: first.stderr
+    }
+  );
+}
+
+function spawnEnvForWpCli(pathPrepend?: string[]): NodeJS.ProcessEnv {
+  if (pathPrepend && pathPrepend.length > 0) {
+    return { ...process.env, PATH: prependToPathEnv(process.env.PATH, pathPrepend) };
+  }
+  return { ...process.env };
+}
+
+function envWithMysqlSocket(baseEnv: NodeJS.ProcessEnv, socketPath: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...baseEnv,
+    MYSQL_UNIX_PORT: socketPath
+  };
+  if (/[\0\r\n"]/u.test(socketPath)) {
+    return env;
+  }
+  // mysqli.default_socket is PHP_INI_SYSTEM here, so ini_set() and an auto_prepend
+  // file do not move WordPress off /tmp/mysql.sock. A scanned ini is applied at
+  // startup for both the wp phar and a shell launcher that re-execs PHP.
+  const iniDir = phpIniDirForMysqlSocket(socketPath);
+  const existingScanDir = baseEnv.PHP_INI_SCAN_DIR?.trim() ?? "";
+  env.PHP_INI_SCAN_DIR = existingScanDir.length > 0
+    ? `${existingScanDir}${path.delimiter}${iniDir}`
+    : `:${iniDir}`;
+  return env;
+}
+
+function phpIniDirForMysqlSocket(socketPath: string): string {
+  const dir = path.join(
+    os.tmpdir(),
+    "wp-agent-mcp-mysql-socket",
+    crypto.createHash("sha256").update(socketPath).digest("hex").slice(0, 16)
+  );
+  fs.mkdirSync(dir, { recursive: true });
+  const filePath = path.join(dir, "socket.ini");
+  const quoted = `"${socketPath.replace(/\\/gu, "\\\\")}"`;
+  const contents = `mysqli.default_socket=${quoted}\npdo_mysql.default_socket=${quoted}\n`;
+  if (!fs.existsSync(filePath) || fs.readFileSync(filePath, "utf8") !== contents) {
+    fs.writeFileSync(filePath, contents, { mode: 0o644 });
+  }
+  return dir;
+}
+
+function isEvalCommand(args: string[]): boolean {
+  return args[0] === "eval" || args[0] === "eval-file";
+}
+
+function wpCliResultFailed(
+  result: { status: number | null; stdout: string; stderr: string },
+  args: string[]
+): boolean {
+  if (result.status !== 0 && !isWarningOnlyWpCliStderr(result.stderr)) {
+    return true;
+  }
+  return isEvalCommand(args) && isWordpressDatabaseErrorDocument(result.stdout);
+}
+
+function shouldRetryMysqlSocket(
+  result: { stderr: string; stdout: string },
+  args: string[]
+): boolean {
+  return isMysqlSocketConnectFailure(result.stderr)
+    || (isEvalCommand(args) && isWordpressDatabaseErrorDocument(result.stdout));
+}
+
+function isDatabaseConnectionFailure(
+  result: { stderr: string; stdout: string },
+  args: string[]
+): boolean {
+  return shouldRetryMysqlSocket(result, args);
+}
+
+function databaseConnectionError(
+  wpCliPath: string,
+  wpRoot: string,
+  args: string[],
+  stderr: string,
+  stdout: string,
+  retriedSocket: string | null,
+  resolution?: MysqlSocketResolution | null
+): AppError {
+  const failedSocket = socketPathFromConnectFailure(stderr);
+  let message = failedSocket
+    ? `MySQL is installed, but WP-CLI could not connect through socket '${failedSocket}'.`
+    : "WordPress could not connect to MySQL. wp eval printed a database connection page and exited 0.";
+  if (retriedSocket) {
+    message += ` A connection using socket '${retriedSocket}' failed as well.`;
+  } else if (resolution?.configuredButMissing) {
+    message += ` This site's MySQL config names '${resolution.configuredButMissing}', and that socket is not present. Start the site so MySQL is running, then retry.`;
+  } else if (resolution?.unresolvedLocalSite) {
+    message += " This WordPress root is a Local site, but its runtime MySQL socket was not found. Start the site in Local, then retry.";
+  } else if (resolution && resolution.ambiguousSockets.length > 1) {
+    message += ` More than one local MySQL socket is available (${resolution.ambiguousSockets.join(", ")}), so none was selected.`;
+  } else if (!retriedSocket) {
+    message += " Local and similar apps keep DB_HOST as localhost while MySQL listens on a site-specific socket. Start the site, or set DB_HOST to localhost:/absolute/path/to/mysqld.sock.";
+  }
+
+  return new AppError("DB_UNREACHABLE", message, 400, {
+    command: `${wpCliPath} --path=${wpRoot} ${formatWpCliSubcommand(args)}`,
+    subcommand: formatWpCliSubcommand(args),
+    args,
+    stderr,
+    stdoutSample: stdout.slice(0, 180),
+    retriedSocket,
+    configuredButMissing: resolution?.configuredButMissing ?? null,
+    ambiguousSockets: resolution?.ambiguousSockets ?? []
+  });
 }
 
 /**
@@ -130,10 +289,9 @@ export async function runWpDbCliStreamingSqlFile(
   ensureWpCliCommandAllowed(["db", "cli"]);
   const wpCliPath = detectWpCliPath(command);
   const normalizedWpRoot = wpRoot.trim();
-  const spawnEnv =
-    pathPrepend && pathPrepend.length > 0
-      ? { ...process.env, PATH: prependToPathEnv(process.env.PATH, pathPrepend) }
-      : process.env;
+  const baseEnv = spawnEnvForWpCli(pathPrepend);
+  const cachedSocket = discoveredMysqlSockets.get(normalizedWpRoot);
+  const spawnEnv = cachedSocket ? envWithMysqlSocket(baseEnv, cachedSocket) : baseEnv;
 
   const child = spawn(wpCliPath, [`--path=${normalizedWpRoot}`, "db", "cli"], {
     stdio: ["pipe", "pipe", "pipe"],

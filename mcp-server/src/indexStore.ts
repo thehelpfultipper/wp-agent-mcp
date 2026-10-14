@@ -1,11 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { spawnSync } from "node:child_process";
 import BetterSqlite3 from "better-sqlite3";
 import { AppError } from "./errors";
 import { internalDefaults } from "./config/runtime";
-import { detectWpCliPath, formatWpCliSubcommand, isWarningOnlyWpCliStderr, runWpCli } from "./wpCli";
+import { isMissingMysqlClientMessage } from "./mysqlUnixSocket";
+import { runWpCli } from "./wpCli";
 import {
   deduceSourceType,
   isClassicTemplateCandidate,
@@ -940,7 +940,7 @@ function isMissingMysqlClientForWpDbQuery(err: unknown): boolean {
   }
   const details = err.details as { stderr?: unknown } | undefined;
   const stderr = typeof details?.stderr === "string" ? details.stderr : "";
-  return stderr.includes("Failed to get current SQL modes. Reason: env: mysql: No such file or directory");
+  return isMissingMysqlClientMessage(stderr);
 }
 
 function buildContentIndexSql(postsTable: string, contentLimit: number): string {
@@ -980,24 +980,7 @@ function queryContentRowsWithWpEval(
     "}"
   ].join(" ");
 
-  const wpCliPath = detectWpCliPath();
-  const normalizedWpRoot = wpRoot.trim();
-  const result = spawnSync(wpCliPath, [`--path=${normalizedWpRoot}`, "eval", php], {
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024
-  });
-  const output = result.stdout?.trim() ?? "";
-  const stderr = result.stderr?.trim() ?? "";
-
-  if (result.status !== 0 && !isWarningOnlyWpCliStderr(stderr)) {
-    throw new AppError("WPCLI_FAILED", "wp-cli command failed.", 400, {
-      command: `${wpCliPath} --path=${normalizedWpRoot} ${formatWpCliSubcommand(["eval", php])}`,
-      subcommand: formatWpCliSubcommand(["eval", php]),
-      args: ["eval", php],
-      stderr
-    });
-  }
-
+  const output = runWpCli(wpRoot, ["eval", php]);
   return parseContentRowsFromTabSeparated(output);
 }
 

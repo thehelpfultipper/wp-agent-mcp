@@ -64,7 +64,10 @@ export const publicToolDefinitions: PublicToolDefinition[] = [
               properties: {
                 wpRoot: { type: "string" },
                 wpCliPath: { type: "string" },
-                tablePrefix: { type: "string", description: "Database table prefix ($wpdb->prefix) for building SELECT table names." }
+                tablePrefix: {
+                  type: "string",
+                  description: "Live database table prefix ($wpdb->prefix). query_wp_db_readonly rewrites core table names from WordPress; pass this back only as a hint."
+                }
               },
               additionalProperties: false
             }
@@ -1680,7 +1683,7 @@ export const publicToolDefinitions: PublicToolDefinition[] = [
   {
     name: "query_wp_db_readonly",
     description:
-      "Run a single read-only `SELECT` against the WordPress MySQL database via `wp db query`. Use for ad hoc reporting (slugs, statuses, meta joins) that the SQLite index does not model. Only `SELECT` is allowed; writes, DDL, cross-schema reads, and dangerous functions are rejected. If the statement has no `LIMIT`, one is appended (capped by `maxRows`). Supports optional multisite context with `siteUrl` or `blogId`. Pass `tablePrefix` from a prior `connect_wordpress` call to skip the prefix-resolution round-trip.",
+      "Run a single read-only `SELECT` against the WordPress MySQL database via `wp db query`. Use for ad hoc reporting (slugs, statuses, meta joins, plugin tables) that the SQLite index does not model. Only `SELECT` is allowed; writes, DDL, cross-schema reads, and dangerous functions are rejected. If the statement has no `LIMIT`, one is appended (capped by `maxRows`). Conventional core names (`wp_posts`, `wp_postmeta`, `wp_options`, `wp_comments`, `wp_terms`, `wp_users`, and the other `$wpdb` tables) are rewritten to the live physical tables before execution. On multisite, blog tables follow the selected blog and global tables such as `wp_users` follow the network base prefix. For any other table, put `{prefix}` where the site prefix belongs, for example `{prefix}gf_entry`. `tablePrefix` from `connect_wordpress` is a hint only; the live `$wpdb->prefix` is used when they differ. Optional `siteUrl` or `blogId` selects the multisite context for that resolution.",
     inputSchema: {
       type: "object",
       required: ["sql"],
@@ -1689,7 +1692,7 @@ export const publicToolDefinitions: PublicToolDefinition[] = [
           type: "string",
           minLength: 1,
           description:
-            "One `SELECT` statement. Trailing semicolon optional. Must include an explicit `LIMIT` ≤ `maxRows`, or a `LIMIT` will be appended automatically. Both `LIMIT count` and `LIMIT offset, count` forms are accepted."
+            "One `SELECT` statement. Use logical core names such as `wp_posts`, or `{prefix}table_suffix` for plugin tables. Trailing semicolon optional. Must include an explicit `LIMIT` ≤ `maxRows`, or a `LIMIT` will be appended automatically. Both `LIMIT count` and `LIMIT offset, count` forms are accepted."
         },
         wpRoot: {
           type: "string",
@@ -1697,7 +1700,7 @@ export const publicToolDefinitions: PublicToolDefinition[] = [
         },
         tablePrefix: {
           type: "string",
-          description: "Optional pre-resolved table prefix (e.g. `wp_` or `wp_2_`) from a prior `connect_wordpress` call. Supplying it skips an internal `wp eval` round-trip."
+          description: "Optional hint from a prior `connect_wordpress` call (for example `wp_` or `wp_2_`). The query uses the live `$wpdb->prefix` when this value differs. It does not choose which tables are queried."
         },
         siteUrl: {
           type: "string",
@@ -1723,10 +1726,15 @@ export const publicToolDefinitions: PublicToolDefinition[] = [
         ok: { type: "boolean", const: true },
         data: {
           type: "object",
-          required: ["wpRoot", "tablePrefix", "context", "sqlExecuted", "columns", "stdout", "stdoutTruncated", "stdoutCharCount"],
+          required: ["wpRoot", "tablePrefix", "tablesRewritten", "context", "sqlExecuted", "columns", "stdout", "stdoutTruncated", "stdoutCharCount"],
           properties: {
             wpRoot: { type: "string" },
             tablePrefix: { type: "string" },
+            tablesRewritten: {
+              type: "object",
+              additionalProperties: { type: "string" },
+              description: "Logical identifiers replaced before execution. Keys are the original SQL text (`wp_posts`, `{prefix}gf_entry`). Values are the physical names sent to MySQL. Empty when nothing changed."
+            },
             context: {
               type: "object",
               required: ["siteUrl", "blogId"],
@@ -1755,7 +1763,7 @@ export const publicToolDefinitions: PublicToolDefinition[] = [
     },
     exampleInvocation: {
       sql: "SELECT ID, post_name, post_status FROM wp_posts WHERE post_type = 'page' AND post_status = 'publish'",
-      tablePrefix: "wp_2_",
+      tablePrefix: "wp_",
       blogId: 2,
       maxRows: 50
     },
@@ -1764,12 +1772,15 @@ export const publicToolDefinitions: PublicToolDefinition[] = [
       data: {
         wpRoot: "/var/www/html",
         tablePrefix: "wp_2_",
+        tablesRewritten: {
+          wp_posts: "wp_2_posts"
+        },
         context: {
           siteUrl: null,
           blogId: 2
         },
         sqlExecuted:
-          "SELECT ID, post_name, post_status FROM wp_posts WHERE post_type = 'page' AND post_status = 'publish' LIMIT 50",
+          "SELECT ID, post_name, post_status FROM wp_2_posts WHERE post_type = 'page' AND post_status = 'publish' LIMIT 50",
         columns: ["ID", "post_name", "post_status"],
         stdout: "123\thome\tpublish\n",
         stdoutTruncated: false,

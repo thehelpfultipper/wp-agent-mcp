@@ -203,7 +203,12 @@ export function resolveWordPressContentPaths(
       if (!allowFilesystemFallback) {
         throw error;
       }
-      if (error instanceof AppError && error.code !== "WPCLI_FAILED" && error.code !== "WP_ROOT_INVALID") {
+      if (
+        error instanceof AppError
+        && error.code !== "WPCLI_FAILED"
+        && error.code !== "WP_ROOT_INVALID"
+        && error.code !== "DB_UNREACHABLE"
+      ) {
         throw error;
       }
     }
